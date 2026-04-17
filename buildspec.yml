@@ -9,6 +9,8 @@ env:
 
 phases:
   install:
+    runtime-versions:
+      docker: 20
     commands:
       - set -euxo pipefail
       - echo "===== Instalando Trivy v$TRIVY_VERSION ====="
