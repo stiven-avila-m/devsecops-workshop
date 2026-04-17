@@ -37,7 +37,8 @@ phases:
       - trivy config --severity "$TRIVY_SEVERITY" --exit-code 1 --format table
         "$DOCKERFILE_PATH"
       - echo "===== [SEC-2] Trivy FS SCAN (secretos en el repo) ====="
-      - echo "Nota: Excluimos /vulnerable porque es material de demo intencional"
+      - echo "Nota - Excluimos /vulnerable porque es material de demo
+        intencional"
       - trivy fs --scanners secret --severity "$TRIVY_SEVERITY" --exit-code 1
         --format table --skip-dirs vulnerable .
 
