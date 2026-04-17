@@ -1,15 +1,5 @@
-# =============================================================================
-#  buildspec.yml - DevSecOps Workshop
-#  Pipeline: GitHub -> CodePipeline -> CodeBuild (este archivo) -> ECR
-#
-#  Cada Trivy con --exit-code 1 rompe el build automaticamente si encuentra
-#  hallazgos HIGH/CRITICAL. NO necesitamos blocks (|) ni if/then; eso evita
-#  errores de parsing YAML en CodeBuild ("Expected Commands[N] to be string").
-#
-#  Para alternar entre demo de fallo y demo de exito, cambiar DOCKERFILE_PATH:
-#    vulnerable/Dockerfile  -> el build debe FALLAR en Trivy
-#    secure/Dockerfile      -> el build debe PASAR y publicar a ECR
-# =============================================================================
+version: 0.2
+
 env:
   variables:
     DOCKERFILE_PATH: "vulnerable/Dockerfile"
@@ -22,7 +12,8 @@ phases:
     commands:
       - set -euxo pipefail
       - echo "===== Instalando Trivy v$TRIVY_VERSION ====="
-      - curl -fL -o trivy.tar.gz "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+      - curl -fL -o trivy.tar.gz
+        "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
       - tar -xzf trivy.tar.gz trivy
       - install -m 0755 trivy /usr/local/bin/trivy
       - which trivy
@@ -33,15 +24,20 @@ phases:
       - set -euxo pipefail
       - echo "===== Login a ECR ====="
       - aws --version
-      - AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+      - AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output
+        text)
       - ECR_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_NAME}"
-      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com"
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login
+        --username AWS --password-stdin
+        "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com"
       - IMAGE_TAG=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c1-8)
       - echo "Imagen objetivo ${ECR_URI}:${IMAGE_TAG}"
       - echo "===== [SEC-1] Trivy CONFIG SCAN sobre el Dockerfile ====="
-      - trivy config --severity "$TRIVY_SEVERITY" --exit-code 1 --format table "$DOCKERFILE_PATH"
+      - trivy config --severity "$TRIVY_SEVERITY" --exit-code 1 --format table
+        "$DOCKERFILE_PATH"
       - echo "===== [SEC-2] Trivy FS SCAN (secretos en el repo) ====="
-      - trivy fs --scanners secret --severity "$TRIVY_SEVERITY" --exit-code 1 --format table .
+      - trivy fs --scanners secret --severity "$TRIVY_SEVERITY" --exit-code 1
+        --format table .
 
   build:
     commands:
@@ -51,8 +47,12 @@ phases:
       - docker tag "${IMAGE_NAME}:${IMAGE_TAG}" "${ECR_URI}:${IMAGE_TAG}"
       - docker tag "${IMAGE_NAME}:${IMAGE_TAG}" "${ECR_URI}:latest"
       - echo "===== [SEC-3] Trivy IMAGE SCAN (CVEs + secretos en layers) ====="
-      - trivy image --severity "$TRIVY_SEVERITY" --exit-code 1 --ignore-unfixed --scanners vuln,secret,misconfig --format table "${IMAGE_NAME}:${IMAGE_TAG}"
-      - trivy image --severity "$TRIVY_SEVERITY" --ignore-unfixed --scanners vuln,secret,misconfig --format json --output trivy-report.json "${IMAGE_NAME}:${IMAGE_TAG}" || true
+      - trivy image --severity "$TRIVY_SEVERITY" --exit-code 1 --ignore-unfixed
+        --scanners vuln,secret,misconfig --format table
+        "${IMAGE_NAME}:${IMAGE_TAG}"
+      - trivy image --severity "$TRIVY_SEVERITY" --ignore-unfixed --scanners
+        vuln,secret,misconfig --format json --output trivy-report.json
+        "${IMAGE_NAME}:${IMAGE_TAG}" || true
 
   post_build:
     commands:
@@ -61,7 +61,8 @@ phases:
       - docker push "${ECR_URI}:${IMAGE_TAG}"
       - docker push "${ECR_URI}:latest"
       - echo "Publicada ${ECR_URI}:${IMAGE_TAG}"
-      - printf '[{"name":"%s","imageUri":"%s"}]' "$IMAGE_NAME" "${ECR_URI}:${IMAGE_TAG}" > imagedefinitions.json
+      - printf '[{"name":"%s","imageUri":"%s"}]' "$IMAGE_NAME"
+        "${ECR_URI}:${IMAGE_TAG}" > imagedefinitions.json
 
 reports:
   trivy-security-report:
