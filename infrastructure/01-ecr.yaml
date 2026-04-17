@@ -1,0 +1,53 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  DevSecOps Workshop - ECR Repository con scan-on-push (Inspector v2)
+  y politica de tag immutability.
+
+Parameters:
+  RepositoryName:
+    Type: String
+    Default: devsecops-demo
+    Description: Nombre del repositorio ECR
+
+Resources:
+  EcrRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Ref RepositoryName
+      ImageTagMutability: IMMUTABLE
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Mantener solo las ultimas 10 imagenes",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 10
+                },
+                "action": { "type": "expire" }
+              }
+            ]
+          }
+      Tags:
+        - Key: Project
+          Value: devsecops-workshop
+        - Key: Owner
+          Value: stivenavilam
+
+Outputs:
+  RepositoryUri:
+    Description: URI del repositorio ECR
+    Value: !GetAtt EcrRepository.RepositoryUri
+    Export:
+      Name: !Sub "${AWS::StackName}-RepositoryUri"
+  RepositoryArn:
+    Value: !GetAtt EcrRepository.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-RepositoryArn"

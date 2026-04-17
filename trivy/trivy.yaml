@@ -1,0 +1,24 @@
+# Configuración global de Trivy para el pipeline.
+# Trivy lo lee automáticamente si está en el cwd o si se pasa con --config.
+severity:
+  - CRITICAL
+  - HIGH
+
+scan:
+  scanners:
+    - vuln
+    - secret
+    - misconfig
+  skip-files:
+    - "**/test/**"
+
+vulnerability:
+  ignore-unfixed: true
+
+misconfiguration:
+  include-non-failures: false
+
+secret:
+  config: trivy/secret.yaml
+
+format: table

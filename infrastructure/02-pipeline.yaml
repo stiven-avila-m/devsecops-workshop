@@ -1,0 +1,191 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  DevSecOps Workshop - CodePipeline (GitHub via CodeStar Connection)
+  + CodeBuild (con Trivy) + integracion a ECR.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: devsecops-workshop
+  GitHubOwner:
+    Type: String
+    Description: Tu usuario / organizacion de GitHub (ej. stivenavilam)
+  GitHubRepo:
+    Type: String
+    Default: devsecops-workshop
+  GitHubBranch:
+    Type: String
+    Default: main
+  CodeStarConnectionArn:
+    Type: String
+    Description: >
+      ARN de la conexion CodeStar a GitHub.
+      Crearla con: aws codestar-connections create-connection
+      --provider-type GitHub --connection-name devsecops-workshop-conn
+      Y luego ACTIVARLA desde la consola.
+  EcrRepositoryName:
+    Type: String
+    Default: devsecops-demo
+
+Resources:
+  # -------------------- S3 para artefactos --------------------
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${ProjectName}-artifacts-${AWS::AccountId}"
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  # -------------------- IAM Roles --------------------
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: codebuild.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: codebuild-inline
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:GetBucketLocation
+                Resource:
+                  - !Sub "${ArtifactBucket.Arn}/*"
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:CompleteLayerUpload
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:InitiateLayerUpload
+                  - ecr:PutImage
+                  - ecr:UploadLayerPart
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - sts:GetCallerIdentity
+                Resource: "*"
+
+  CodePipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: codepipeline.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: codepipeline-inline
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:PutObject
+                  - s3:GetBucketVersioning
+                Resource:
+                  - !GetAtt ArtifactBucket.Arn
+                  - !Sub "${ArtifactBucket.Arn}/*"
+              - Effect: Allow
+                Action:
+                  - codebuild:StartBuild
+                  - codebuild:BatchGetBuilds
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - codestar-connections:UseConnection
+                Resource: !Ref CodeStarConnectionArn
+
+  # -------------------- CodeBuild --------------------
+  CodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub "${ProjectName}-build"
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+      Artifacts: { Type: CODEPIPELINE }
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: buildspec.yml
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_MEDIUM
+        Image: aws/codebuild/standard:7.0
+        PrivilegedMode: true   # necesario para docker build
+        EnvironmentVariables:
+          - { Name: AWS_DEFAULT_REGION, Value: !Ref AWS::Region }
+          - { Name: AWS_ACCOUNT_ID,    Value: !Ref AWS::AccountId }
+          - { Name: IMAGE_NAME,        Value: !Ref EcrRepositoryName }
+
+  # -------------------- CodePipeline --------------------
+  Pipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: !Sub "${ProjectName}-pipeline"
+      RoleArn: !GetAtt CodePipelineRole.Arn
+      ArtifactStore:
+        Type: S3
+        Location: !Ref ArtifactBucket
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: GitHub_Source
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: CodeStarSourceConnection
+                Version: "1"
+              Configuration:
+                ConnectionArn: !Ref CodeStarConnectionArn
+                FullRepositoryId: !Sub "${GitHubOwner}/${GitHubRepo}"
+                BranchName: !Ref GitHubBranch
+                DetectChanges: "true"
+              OutputArtifacts:
+                - Name: SourceOutput
+
+        - Name: SecurityScanAndBuild
+          # Aqui es donde Trivy decide si la imagen entra a ECR o no.
+          Actions:
+            - Name: Trivy_Scan_And_Build
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: "1"
+              Configuration:
+                ProjectName: !Ref CodeBuildProject
+              InputArtifacts:
+                - Name: SourceOutput
+              OutputArtifacts:
+                - Name: BuildOutput
+
+Outputs:
+  PipelineUrl:
+    Value: !Sub "https://${AWS::Region}.console.aws.amazon.com/codesuite/codepipeline/pipelines/${Pipeline}/view"
+  ArtifactBucketName:
+    Value: !Ref ArtifactBucket

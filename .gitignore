@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+.env
+.env.local
+trivy-report.json
+imagedefinitions.json
+.DS_Store
+.idea/
+.vscode/

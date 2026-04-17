@@ -1,0 +1,4 @@
+# Aquí puedes "aceptar" CVEs después de revisión formal.
+# Formato: un CVE por línea. Vacío para el workshop a propósito.
+# Ejemplo:
+# CVE-2023-45853   # zlib - parche aún no disponible aguas arriba, mitigado por WAF

@@ -1,0 +1,134 @@
+# =============================================================================
+#  buildspec.yml - DevSecOps Workshop
+#  Pipeline: GitHub -> CodePipeline -> CodeBuild (este archivo) -> ECR
+#
+#  El stage de seguridad (Trivy) corre ANTES del docker push.
+#  Si Trivy detecta CRITICAL o HIGH -> el build FALLA y NO se publica a ECR.
+# =============================================================================
+version: 0.2
+
+env:
+  variables:
+    # Cambiar el tag de Dockerfile a "vulnerable/Dockerfile" para la demo del fallo
+    # y a "secure/Dockerfile" para la demo del despliegue exitoso.
+    DOCKERFILE_PATH: "vulnerable/Dockerfile"
+    IMAGE_NAME: "devsecops-demo"
+    TRIVY_VERSION: "0.54.1"
+    # Severidades que rompen el build
+    TRIVY_SEVERITY: "HIGH,CRITICAL"
+    # Salir con codigo distinto de 0 si encuentra hallazgos
+    TRIVY_EXIT_CODE: "1"
+  exported-variables:
+    - IMAGE_TAG
+
+phases:
+  install:
+    runtime-versions:
+      docker: latest
+    commands:
+      - echo "===== Instalando Trivy v$TRIVY_VERSION ====="
+      - curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin v$TRIVY_VERSION
+      - trivy --version
+
+  pre_build:
+    commands:
+      - echo "===== Login a ECR ====="
+      - aws --version
+      - AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+      - ECR_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_NAME}"
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com"
+      - IMAGE_TAG="${CODEBUILD_RESOLVED_SOURCE_VERSION:0:8}"
+      - echo "Image: ${ECR_URI}:${IMAGE_TAG}"
+
+      - echo "===== [SEC-1] Trivy CONFIG SCAN sobre el Dockerfile ====="
+      # Detecta misconfig del Dockerfile (USER root, secretos, etc.)
+      - |
+        trivy config \
+          --severity $TRIVY_SEVERITY \
+          --exit-code $TRIVY_EXIT_CODE \
+          --format table \
+          $DOCKERFILE_PATH || CONFIG_FAILED=1
+      - |
+        if [ "$CONFIG_FAILED" = "1" ]; then
+          echo ""
+          echo "BUILD FALLO: Trivy detecto MISCONFIGURACIONES en el Dockerfile."
+          echo "Revisa el reporte arriba y corrige antes de reintentar."
+          exit 1
+        fi
+
+      - echo "===== [SEC-2] Trivy FILESYSTEM SCAN (secretos en el repo) ====="
+      # Detecta secretos hardcodeados en TODO el repo (Dockerfile, .env, codigo)
+      - |
+        trivy fs \
+          --scanners secret \
+          --severity $TRIVY_SEVERITY \
+          --exit-code $TRIVY_EXIT_CODE \
+          --format table \
+          . || SECRET_FAILED=1
+      - |
+        if [ "$SECRET_FAILED" = "1" ]; then
+          echo ""
+          echo "BUILD FALLO: Trivy detecto SECRETOS hardcodeados en el repositorio."
+          exit 1
+        fi
+
+  build:
+    commands:
+      - echo "===== Build de la imagen Docker ====="
+      - docker build -f $DOCKERFILE_PATH -t ${IMAGE_NAME}:${IMAGE_TAG} .
+      - docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${ECR_URI}:${IMAGE_TAG}
+      - docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${ECR_URI}:latest
+
+      - echo "===== [SEC-3] Trivy IMAGE SCAN (CVEs + secretos en layers) ====="
+      # Aqui es donde ATRAPAMOS la imagen ANTES del push a ECR
+      - |
+        trivy image \
+          --severity $TRIVY_SEVERITY \
+          --exit-code $TRIVY_EXIT_CODE \
+          --ignore-unfixed \
+          --scanners vuln,secret,misconfig \
+          --format table \
+          ${IMAGE_NAME}:${IMAGE_TAG} || IMAGE_FAILED=1
+
+      # Reporte adicional en JSON para artefacto / SecurityHub
+      - |
+        trivy image \
+          --severity $TRIVY_SEVERITY \
+          --ignore-unfixed \
+          --scanners vuln,secret,misconfig \
+          --format json \
+          --output trivy-report.json \
+          ${IMAGE_NAME}:${IMAGE_TAG} || true
+
+      - |
+        if [ "$IMAGE_FAILED" = "1" ]; then
+          echo ""
+          echo "================================================================"
+          echo "BUILD FALLO: Trivy detecto vulnerabilidades en la IMAGEN."
+          echo "La imagen NO sera publicada a ECR."
+          echo "Revisa trivy-report.json y corrige el Dockerfile."
+          echo "================================================================"
+          exit 1
+        fi
+
+  post_build:
+    commands:
+      - echo "===== Imagen aprobada por security gate. Publicando a ECR ====="
+      - docker push ${ECR_URI}:${IMAGE_TAG}
+      - docker push ${ECR_URI}:latest
+      - echo "Imagen publicada: ${ECR_URI}:${IMAGE_TAG}"
+
+      # imagedefinitions.json (por si despues encadenas a ECS Deploy stage)
+      - printf '[{"name":"%s","imageUri":"%s"}]' "$IMAGE_NAME" "${ECR_URI}:${IMAGE_TAG}" > imagedefinitions.json
+
+reports:
+  trivy-security-report:
+    files:
+      - trivy-report.json
+    file-format: JSON
+
+artifacts:
+  files:
+    - imagedefinitions.json
+    - trivy-report.json
+  discard-paths: yes
