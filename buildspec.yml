@@ -10,7 +10,7 @@ env:
 phases:
   install:
     runtime-versions:
-      docker: 20
+      python: 3.11
     commands:
       - set -euxo pipefail
       - echo "===== Instalando Trivy v$TRIVY_VERSION ====="
