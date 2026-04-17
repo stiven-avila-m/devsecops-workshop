@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >
-  DevSecOps Workshop - CodePipeline (GitHub via CodeStar Connection)
-  + CodeBuild (con Trivy) + integracion a ECR.
+  DevSecOps Workshop - CodePipeline (GitHub via CodeStar Connection) + CodeBuild
+  (con Trivy) + integracion a ECR.
 
 Parameters:
   ProjectName:
@@ -19,10 +19,10 @@ Parameters:
   CodeStarConnectionArn:
     Type: String
     Description: >
-      ARN de la conexion CodeStar a GitHub.
-      Crearla con: aws codestar-connections create-connection
-      --provider-type GitHub --connection-name devsecops-workshop-conn
-      Y luego ACTIVARLA desde la consola.
+      ARN de la conexion CodeStar a GitHub. Crearla con: aws
+      codestar-connections create-connection --provider-type GitHub
+      --connection-name devsecops-workshop-conn Y luego ACTIVARLA desde la
+      consola.
   EcrRepositoryName:
     Type: String
     Default: devsecops-demo
@@ -83,6 +83,10 @@ Resources:
                   - ecr:InitiateLayerUpload
                   - ecr:PutImage
                   - ecr:UploadLayerPart
+                  - codebuild:CreateReportGroup
+                  - codebuild:CreateReport
+                  - codebuild:UpdateReport
+                  - codebuild:BatchPutTestCases
                 Resource: "*"
               - Effect: Allow
                 Action:
@@ -116,6 +120,10 @@ Resources:
                 Action:
                   - codebuild:StartBuild
                   - codebuild:BatchGetBuilds
+                  - codebuild:CreateReportGroup
+                  - codebuild:CreateReport
+                  - codebuild:UpdateReport
+                  - codebuild:BatchPutTestCases
                 Resource: "*"
               - Effect: Allow
                 Action:
@@ -136,11 +144,11 @@ Resources:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_MEDIUM
         Image: aws/codebuild/standard:7.0
-        PrivilegedMode: true   # necesario para docker build
+        PrivilegedMode: true # necesario para docker build
         EnvironmentVariables:
           - { Name: AWS_DEFAULT_REGION, Value: !Ref AWS::Region }
-          - { Name: AWS_ACCOUNT_ID,    Value: !Ref AWS::AccountId }
-          - { Name: IMAGE_NAME,        Value: !Ref EcrRepositoryName }
+          - { Name: AWS_ACCOUNT_ID, Value: !Ref AWS::AccountId }
+          - { Name: IMAGE_NAME, Value: !Ref EcrRepositoryName }
 
   # -------------------- CodePipeline --------------------
   Pipeline:
@@ -186,6 +194,7 @@ Resources:
 
 Outputs:
   PipelineUrl:
-    Value: !Sub "https://${AWS::Region}.console.aws.amazon.com/codesuite/codepipeline/pipelines/${Pipeline}/view"
+    Value: !Sub "https://${AWS::Region}.console.aws.amazon.com/codesuite/codepipeli\
+      ne/pipelines/${Pipeline}/view"
   ArtifactBucketName:
     Value: !Ref ArtifactBucket

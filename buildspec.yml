@@ -2,7 +2,7 @@ version: 0.2
 
 env:
   variables:
-    DOCKERFILE_PATH: "secure/Dockerfile"
+    DOCKERFILE_PATH: "vulnerable/Dockerfile"
     IMAGE_NAME: "devsecops-demo"
     TRIVY_VERSION: "0.70.0"
     TRIVY_SEVERITY: "HIGH,CRITICAL"
