@@ -10,8 +10,6 @@
 #    vulnerable/Dockerfile  -> el build debe FALLAR en Trivy
 #    secure/Dockerfile      -> el build debe PASAR y publicar a ECR
 # =============================================================================
-version: 0.2
-
 env:
   variables:
     DOCKERFILE_PATH: "vulnerable/Dockerfile"
@@ -22,12 +20,17 @@ env:
 phases:
   install:
     commands:
+      - set -euxo pipefail
       - echo "===== Instalando Trivy v$TRIVY_VERSION ====="
-      - curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin v$TRIVY_VERSION
+      - curl -fL -o trivy.tar.gz "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+      - tar -xzf trivy.tar.gz trivy
+      - install -m 0755 trivy /usr/local/bin/trivy
+      - which trivy
       - trivy --version
 
   pre_build:
     commands:
+      - set -euxo pipefail
       - echo "===== Login a ECR ====="
       - aws --version
       - AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
@@ -36,25 +39,27 @@ phases:
       - IMAGE_TAG=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c1-8)
       - echo "Imagen objetivo ${ECR_URI}:${IMAGE_TAG}"
       - echo "===== [SEC-1] Trivy CONFIG SCAN sobre el Dockerfile ====="
-      - trivy config --severity $TRIVY_SEVERITY --exit-code 1 --format table $DOCKERFILE_PATH
+      - trivy config --severity "$TRIVY_SEVERITY" --exit-code 1 --format table "$DOCKERFILE_PATH"
       - echo "===== [SEC-2] Trivy FS SCAN (secretos en el repo) ====="
-      - trivy fs --scanners secret --severity $TRIVY_SEVERITY --exit-code 1 --format table .
+      - trivy fs --scanners secret --severity "$TRIVY_SEVERITY" --exit-code 1 --format table .
 
   build:
     commands:
+      - set -euxo pipefail
       - echo "===== Build de la imagen Docker ====="
-      - docker build -f $DOCKERFILE_PATH -t ${IMAGE_NAME}:${IMAGE_TAG} .
-      - docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${ECR_URI}:${IMAGE_TAG}
-      - docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${ECR_URI}:latest
+      - docker build -f "$DOCKERFILE_PATH" -t "${IMAGE_NAME}:${IMAGE_TAG}" .
+      - docker tag "${IMAGE_NAME}:${IMAGE_TAG}" "${ECR_URI}:${IMAGE_TAG}"
+      - docker tag "${IMAGE_NAME}:${IMAGE_TAG}" "${ECR_URI}:latest"
       - echo "===== [SEC-3] Trivy IMAGE SCAN (CVEs + secretos en layers) ====="
-      - trivy image --severity $TRIVY_SEVERITY --exit-code 1 --ignore-unfixed --scanners vuln,secret,misconfig --format table ${IMAGE_NAME}:${IMAGE_TAG}
-      - trivy image --severity $TRIVY_SEVERITY --ignore-unfixed --scanners vuln,secret,misconfig --format json --output trivy-report.json ${IMAGE_NAME}:${IMAGE_TAG} || true
+      - trivy image --severity "$TRIVY_SEVERITY" --exit-code 1 --ignore-unfixed --scanners vuln,secret,misconfig --format table "${IMAGE_NAME}:${IMAGE_TAG}"
+      - trivy image --severity "$TRIVY_SEVERITY" --ignore-unfixed --scanners vuln,secret,misconfig --format json --output trivy-report.json "${IMAGE_NAME}:${IMAGE_TAG}" || true
 
   post_build:
     commands:
+      - set -euxo pipefail
       - echo "===== Imagen aprobada por el security gate. Publicando a ECR ====="
-      - docker push ${ECR_URI}:${IMAGE_TAG}
-      - docker push ${ECR_URI}:latest
+      - docker push "${ECR_URI}:${IMAGE_TAG}"
+      - docker push "${ECR_URI}:latest"
       - echo "Publicada ${ECR_URI}:${IMAGE_TAG}"
       - printf '[{"name":"%s","imageUri":"%s"}]' "$IMAGE_NAME" "${ECR_URI}:${IMAGE_TAG}" > imagedefinitions.json
 
