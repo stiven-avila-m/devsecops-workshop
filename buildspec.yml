@@ -4,7 +4,7 @@ env:
   variables:
     DOCKERFILE_PATH: "vulnerable/Dockerfile"
     IMAGE_NAME: "devsecops-demo"
-    TRIVY_VERSION: "0.54.1"
+    TRIVY_VERSION: "0.70.0"
     TRIVY_SEVERITY: "HIGH,CRITICAL"
   shell: bash
 
@@ -13,11 +13,11 @@ phases:
     runtime-versions:
       python: 3.11
     commands:
-      - echo "===== Instalando Trivy v$TRIVY_VERSION ====="
-      - curl -fL -o trivy.tar.gz
-        "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
-      - tar -xzf trivy.tar.gz trivy
-      - install -m 0755 trivy /usr/local/bin/trivy
+      - echo "===== Instalando Trivy v$TRIVY_VERSION usando el instalador
+        oficial ====="
+      - curl -sfL
+        https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh
+        | sh -s -- -b /usr/local/bin v${TRIVY_VERSION}
       - which trivy
       - trivy --version
 
