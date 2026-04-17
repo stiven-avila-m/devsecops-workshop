@@ -48,7 +48,7 @@ aws codestar-connections create-connection --provider-type GitHub --connection-n
 ## Paso 2 — Crear ECR
 
 ```bash
-aws cloudformation deploy --stack-name devsecops-ecr -template-file infrastructure/01-ecr.yaml --capabilities CAPABILITY_NAMED_IAM --profile itera
+aws cloudformation deploy --stack-name devsecops-ecr --template-file infrastructure/01-ecr.yaml --capabilities CAPABILITY_NAMED_IAM --profile itera
 ```
 
 Verifica:
@@ -61,7 +61,15 @@ aws ecr describe-repositories --repository-names devsecops-demo --profile itera
 ## Paso 3 — Crear el pipeline
 
 ```bash
-aws cloudformation deploy -stack-name devsecops-pipeline --template-file infrastructure/02-pipeline.yaml --capabilities CAPABILITY_NAMED_IAM --parameter-overrides GitHubOwner=stiven-avila-m CodeStarConnectionArn=<arn-del-paso-1>
+aws cloudformation deploy \
+  --stack-name devsecops-pipeline \
+  --template-file infrastructure/02-pipeline.yaml \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --parameter-overrides \
+    GitHubOwner=stiven-avila-m \
+    CodeStarConnectionArn=arn:aws:codestar-connections:us-east-1:963753594188:connection/06a7361a-6522-4aaa-8547-7aad3ede23eb \
+  --profile itera \
+  --region us-east-1
 ```
 
 Esto crea: bucket S3 de artefactos, roles IAM, CodeBuild project y CodePipeline.
