@@ -6,13 +6,13 @@ env:
     IMAGE_NAME: "devsecops-demo"
     TRIVY_VERSION: "0.54.1"
     TRIVY_SEVERITY: "HIGH,CRITICAL"
+  shell: bash
 
 phases:
   install:
     runtime-versions:
       python: 3.11
     commands:
-      - set -euxo pipefail
       - echo "===== Instalando Trivy v$TRIVY_VERSION ====="
       - curl -fL -o trivy.tar.gz
         "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
@@ -23,7 +23,6 @@ phases:
 
   pre_build:
     commands:
-      - set -euxo pipefail
       - echo "===== Login a ECR ====="
       - aws --version
       - AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output
@@ -43,7 +42,6 @@ phases:
 
   build:
     commands:
-      - set -euxo pipefail
       - echo "===== Build de la imagen Docker ====="
       - docker build -f "$DOCKERFILE_PATH" -t "${IMAGE_NAME}:${IMAGE_TAG}" .
       - docker tag "${IMAGE_NAME}:${IMAGE_TAG}" "${ECR_URI}:${IMAGE_TAG}"
@@ -58,7 +56,6 @@ phases:
 
   post_build:
     commands:
-      - set -euxo pipefail
       - echo "===== Imagen aprobada por el security gate. Publicando a ECR ====="
       - docker push "${ECR_URI}:${IMAGE_TAG}"
       - docker push "${ECR_URI}:latest"
